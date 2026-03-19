@@ -88,6 +88,50 @@ if (backToTopButton) {
 
 const animatedElements = document.querySelectorAll('.animate-on-scroll');
 const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+const swapNameEl = document.getElementById('swapName');
+
+if (swapNameEl) {
+  if (prefersReducedMotion) {
+    swapNameEl.textContent = 'R. Jithin Kumar';
+  } else {
+    const nameVariants = ['R. Jithin Kumar', 'CSE', 'Cyber Security'];
+    let nameIndex = 0;
+    let charIndex = 0;
+    let isDeleting = false;
+
+    const tickNameSwap = () => {
+      const currentName = nameVariants[nameIndex];
+
+      if (!isDeleting) {
+        charIndex += 1;
+        swapNameEl.textContent = currentName.slice(0, charIndex);
+
+        if (charIndex >= currentName.length) {
+          isDeleting = true;
+          window.setTimeout(tickNameSwap, 1100);
+          return;
+        }
+
+        window.setTimeout(tickNameSwap, 95);
+        return;
+      }
+
+      charIndex -= 1;
+      swapNameEl.textContent = currentName.slice(0, charIndex);
+
+      if (charIndex <= 0) {
+        isDeleting = false;
+        nameIndex = (nameIndex + 1) % nameVariants.length;
+        window.setTimeout(tickNameSwap, 240);
+        return;
+      }
+
+      window.setTimeout(tickNameSwap, 52);
+    };
+
+    tickNameSwap();
+  }
+}
 
 if (!prefersReducedMotion && interactiveMagnetic.length) {
   interactiveMagnetic.forEach((element) => {

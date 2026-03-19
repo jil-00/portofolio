@@ -557,6 +557,11 @@ main,
   margin: 0 0 0.4rem;
 }
 
+.swap-role {
+  display: inline-block;
+  min-width: 18ch;
+}
+
 h1 {
   margin: 0;
   font-size: clamp(2rem, 4vw, 3.4rem);
@@ -565,6 +570,30 @@ h1 {
 
 h1 span {
   color: var(--accent-soft);
+}
+
+.swap-name {
+  display: inline-block;
+  min-height: 1.1em;
+  white-space: nowrap;
+}
+
+.swap-name::after {
+  content: '|';
+  margin-left: 2px;
+  color: #cfe2ff;
+  animation: caretBlink 0.9s steps(1, end) infinite;
+}
+
+@keyframes caretBlink {
+  0%,
+  45% {
+    opacity: 1;
+  }
+  50%,
+  100% {
+    opacity: 0;
+  }
 }
 
 .hero-copy {
