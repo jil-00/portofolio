@@ -1,6 +1,16 @@
 const menuButton = document.querySelector('.menu-toggle');
 const navLinks = document.querySelector('.nav-links');
 const navAnchors = navLinks ? navLinks.querySelectorAll('a[href^="#"]') : [];
+const interactiveMagnetic = document.querySelectorAll(
+  '.btn, .project-links a, .hero-socials a, .contact-link-card, .back-to-top'
+);
+const tiltCards = document.querySelectorAll('.project-card, .hero-card');
+const pointerState = {
+  x: window.innerWidth / 2,
+  y: window.innerHeight / 2,
+  active: false,
+};
+const starsForRepel = [];
 
 if (menuButton && navLinks) {
   menuButton.addEventListener('click', () => {
@@ -79,19 +89,108 @@ if (backToTopButton) {
 const animatedElements = document.querySelectorAll('.animate-on-scroll');
 const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
+if (!prefersReducedMotion && interactiveMagnetic.length) {
+  interactiveMagnetic.forEach((element) => {
+    element.classList.add('magnetic');
+
+    const springBack = () => {
+      element.style.transition = 'transform 260ms cubic-bezier(0.22, 1, 0.36, 1)';
+      element.style.transform = '';
+    };
+
+    element.addEventListener('mousemove', (event) => {
+      const bounds = element.getBoundingClientRect();
+      const offsetX = event.clientX - bounds.left - bounds.width / 2;
+      const offsetY = event.clientY - bounds.top - bounds.height / 2;
+
+      element.style.transition = 'transform 110ms ease-out';
+      element.style.transform = `translate(${offsetX * 0.12}px, ${offsetY * 0.12}px)`;
+    });
+
+    element.addEventListener('mouseleave', springBack);
+    element.addEventListener('blur', springBack);
+  });
+}
+
+if (!prefersReducedMotion && tiltCards.length) {
+  tiltCards.forEach((card) => {
+    const resetTilt = () => {
+      card.style.transition = 'transform 320ms cubic-bezier(0.22, 1, 0.36, 1)';
+      card.style.transform = '';
+    };
+
+    card.addEventListener('mousemove', (event) => {
+      const bounds = card.getBoundingClientRect();
+      const x = (event.clientX - bounds.left) / bounds.width;
+      const y = (event.clientY - bounds.top) / bounds.height;
+      const tiltX = (0.5 - y) * 8;
+      const tiltY = (x - 0.5) * 10;
+
+      card.style.transition = 'transform 90ms ease-out';
+      card.style.transform = `perspective(900px) rotateX(${tiltX}deg) rotateY(${tiltY}deg) translateY(-2px)`;
+    });
+
+    card.addEventListener('mouseleave', resetTilt);
+    card.addEventListener('blur', resetTilt);
+  });
+}
+
+if (!prefersReducedMotion) {
+  const core = document.createElement('span');
+  const glow = document.createElement('span');
+  core.className = 'cursor-core';
+  glow.className = 'cursor-glow';
+  document.body.append(core, glow);
+
+  const trail = { x: pointerState.x, y: pointerState.y };
+
+  const renderCursor = () => {
+    trail.x += (pointerState.x - trail.x) * 0.16;
+    trail.y += (pointerState.y - trail.y) * 0.16;
+
+    core.style.transform = `translate3d(${pointerState.x}px, ${pointerState.y}px, 0) translate(-50%, -50%)`;
+    glow.style.transform = `translate3d(${trail.x}px, ${trail.y}px, 0) translate(-50%, -50%)`;
+
+    window.requestAnimationFrame(renderCursor);
+  };
+
+  document.addEventListener(
+    'pointermove',
+    (event) => {
+      pointerState.x = event.clientX;
+      pointerState.y = event.clientY;
+      pointerState.active = true;
+      document.body.classList.add('pointer-ready');
+    },
+    { passive: true }
+  );
+
+  document.addEventListener('pointerdown', () => {
+    core.style.transform += ' scale(0.9)';
+  });
+
+  document.addEventListener('pointerup', () => {
+    core.style.transform = `translate3d(${pointerState.x}px, ${pointerState.y}px, 0) translate(-50%, -50%)`;
+  });
+
+  window.requestAnimationFrame(renderCursor);
+}
+
 if (starsLayer) {
-  const starCount = 140;
+  const starCount = 170;
 
   for (let index = 0; index < starCount; index += 1) {
     const star = document.createElement('span');
     star.className = 'star';
 
-    const x = `${Math.random() * 100}%`;
-    const y = `${Math.random() * 100}%`;
+    const xValue = Math.random() * 100;
+    const yValue = Math.random() * 100;
+    const x = `${xValue}%`;
+    const y = `${yValue}%`;
     const size = `${1 + Math.random() * 2.2}px`;
     const opacity = `${0.35 + Math.random() * 0.65}`;
-    const duration = `${2.8 + Math.random() * 5.5}s`;
-    const delay = `${Math.random() * 3.5}s`;
+    const duration = `${3.2 + Math.random() * 6.2}s`;
+    const delay = `${Math.random() * 4}s`;
 
     star.style.setProperty('--x', x);
     star.style.setProperty('--y', y);
@@ -101,10 +200,106 @@ if (starsLayer) {
     star.style.setProperty('--delay', delay);
 
     starsLayer.appendChild(star);
+    starsForRepel.push({
+      node: star,
+      xRatio: xValue / 100,
+      yRatio: yValue / 100,
+      strength: 0.7 + Math.random() * 0.7,
+    });
+  }
+
+  const superstarCount = 12;
+  for (let index = 0; index < superstarCount; index += 1) {
+    const star = document.createElement('span');
+    star.className = 'star';
+
+    const xValue = Math.random() * 100;
+    const yValue = Math.random() * 100;
+    const x = `${xValue}%`;
+    const y = `${yValue}%`;
+    const size = `${3 + Math.random() * 2.6}px`;
+    const opacity = `${0.68 + Math.random() * 0.3}`;
+    const duration = `${3.2 + Math.random() * 4.1}s`;
+    const delay = `${Math.random() * 2.4}s`;
+
+    star.style.setProperty('--x', x);
+    star.style.setProperty('--y', y);
+    star.style.setProperty('--size', size);
+    star.style.setProperty('--opacity', opacity);
+    star.style.setProperty('--duration', duration);
+    star.style.setProperty('--delay', delay);
+
+    starsLayer.appendChild(star);
+    starsForRepel.push({
+      node: star,
+      xRatio: xValue / 100,
+      yRatio: yValue / 100,
+      strength: 1 + Math.random() * 0.9,
+    });
   }
 }
 
-if (meteorsLayer && !prefersReducedMotion) {
+if (!prefersReducedMotion && starsForRepel.length) {
+  const repelRadius = 170;
+  const maxShift = 28;
+
+  const animateStarRepel = () => {
+    const width = window.innerWidth;
+    const height = window.innerHeight;
+
+    starsForRepel.forEach((starItem) => {
+      if (!pointerState.active) {
+        starItem.node.style.setProperty('--tx', '0px');
+        starItem.node.style.setProperty('--ty', '0px');
+        return;
+      }
+
+      const starX = starItem.xRatio * width;
+      const starY = starItem.yRatio * height;
+      const dx = starX - pointerState.x;
+      const dy = starY - pointerState.y;
+      const distance = Math.hypot(dx, dy);
+
+      if (distance > repelRadius || distance === 0) {
+        starItem.node.style.setProperty('--tx', '0px');
+        starItem.node.style.setProperty('--ty', '0px');
+        return;
+      }
+
+      const falloff = 1 - distance / repelRadius;
+      const move = falloff * maxShift * starItem.strength;
+      const tx = (dx / distance) * move;
+      const ty = (dy / distance) * move;
+
+      starItem.node.style.setProperty('--tx', `${tx.toFixed(2)}px`);
+      starItem.node.style.setProperty('--ty', `${ty.toFixed(2)}px`);
+    });
+
+    window.requestAnimationFrame(animateStarRepel);
+  };
+
+  document.addEventListener(
+    'pointermove',
+    (event) => {
+      pointerState.x = event.clientX;
+      pointerState.y = event.clientY;
+      pointerState.active = true;
+    },
+    { passive: true }
+  );
+
+  document.addEventListener('pointerleave', () => {
+    pointerState.active = false;
+  });
+
+  window.addEventListener('blur', () => {
+    pointerState.active = false;
+  });
+
+  window.requestAnimationFrame(animateStarRepel);
+}
+
+if (meteorsLayer) {
   const spawnMeteor = () => {
     const meteor = document.createElement('span');
     meteor.className = 'meteor';
@@ -112,11 +307,11 @@ if (meteorsLayer && !prefersReducedMotion) {
     const lane = Math.random();
     const startX = `${2 + lane * 96}%`;
     const startY = `${-30 + Math.random() * 10}%`;
-    const length = `${110 + Math.random() * 120}px`;
-    const duration = `${0.55 + Math.random() * 0.58}s`;
-    const angle = `${-84 + (Math.random() * 16 - 8)}deg`;
-    const travelX = `${-40 + Math.random() * 80}px`;
-    const travelY = `${700 + Math.random() * 560}px`;
+    const length = `${100 + Math.random() * 120}px`;
+    const duration = `${0.72 + Math.random() * 0.56}s`;
+    const angle = `${-90 + (Math.random() * 7 - 3.5)}deg`;
+    const travelX = `${-28 + Math.random() * 56}px`;
+    const travelY = `${860 + Math.random() * 560}px`;
 
     meteor.style.setProperty('--x', startX);
     meteor.style.setProperty('--y', startY);
@@ -128,46 +323,57 @@ if (meteorsLayer && !prefersReducedMotion) {
 
     meteorsLayer.appendChild(meteor);
     meteor.addEventListener('animationend', () => {
-      const rect = meteor.getBoundingClientRect();
-      const impact = document.createElement('span');
-      impact.className = 'meteor-impact';
-      impact.style.left = `${rect.right}px`;
-      impact.style.top = `${rect.bottom}px`;
-      document.body.appendChild(impact);
-      impact.addEventListener('animationend', () => impact.remove());
+      if (Math.random() < 0.35) {
+        const rect = meteor.getBoundingClientRect();
+        const impact = document.createElement('span');
+        impact.className = 'meteor-impact';
+        impact.style.left = `${rect.right}px`;
+        impact.style.top = `${rect.bottom}px`;
+        document.body.appendChild(impact);
+        impact.addEventListener('animationend', () => impact.remove());
+      }
       meteor.remove();
     });
   };
 
   const queueMeteor = () => {
-    const burstCount = 2 + Math.floor(Math.random() * 4);
+    const burstCount = 2 + Math.floor(Math.random() * 3);
     for (let index = 0; index < burstCount; index += 1) {
-      window.setTimeout(spawnMeteor, index * (30 + Math.random() * 70));
+      window.setTimeout(spawnMeteor, index * (52 + Math.random() * 88));
     }
 
-    const nextDelay = 160 + Math.random() * 480;
+    const nextDelay = 240 + Math.random() * 560;
     window.setTimeout(queueMeteor, nextDelay);
   };
+
+  // Seed a few meteors immediately so the shower is visible as soon as page loads.
+  for (let index = 0; index < 3; index += 1) {
+    window.setTimeout(spawnMeteor, index * 120);
+  }
 
   queueMeteor();
 }
 
 const createClickBurst = (x, y) => {
-  const particles = 16;
+  const particles = 22;
 
   for (let index = 0; index < particles; index += 1) {
     const particle = document.createElement('span');
     particle.className = 'boom-particle';
     particle.style.left = `${x - 4}px`;
-    particle.style.top = `${y - 4}px`;
+    particle.style.top = `${y - 8}px`;
 
-    const angle = (Math.PI * 2 * index) / particles + Math.random() * 0.25;
-    const distance = 36 + Math.random() * 48;
-    const offsetX = Math.cos(angle) * distance;
-    const offsetY = Math.sin(angle) * distance;
+    const angle = (Math.PI * 2 * index) / particles + Math.random() * 0.35;
+    const distance = 28 + Math.random() * 52;
+    const offsetX = Math.cos(angle) * distance * 0.9;
+    const offsetY = -20 - Math.abs(Math.sin(angle) * distance * 1.35);
+    const size = 4 + Math.random() * 8;
+    const hue = 20 + Math.random() * 24;
 
     particle.style.setProperty('--dx', `${offsetX}px`);
     particle.style.setProperty('--dy', `${offsetY}px`);
+    particle.style.setProperty('--size', `${size}px`);
+    particle.style.setProperty('--hue', `${hue}`);
 
     document.body.appendChild(particle);
     particle.addEventListener('animationend', () => particle.remove());
