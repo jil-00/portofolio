@@ -71,6 +71,8 @@ if (yearEl) {
 const backToTopButton = document.getElementById('backToTop');
 const starsLayer = document.querySelector('.bg-stars');
 const meteorsLayer = document.querySelector('.bg-meteors');
+const fxQualitySelect = document.getElementById('fxQuality');
+const fxModeHint = document.getElementById('fxModeHint');
 
 if (backToTopButton) {
   const toggleBackToTop = () => {
@@ -89,6 +91,42 @@ if (backToTopButton) {
 const animatedElements = document.querySelectorAll('.animate-on-scroll');
 const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 const swapNameEl = document.getElementById('swapName');
+const isSmallViewport = window.matchMedia('(max-width: 900px)').matches;
+const hasLowCpu = typeof navigator.hardwareConcurrency === 'number' && navigator.hardwareConcurrency <= 4;
+const hasLowMemory = typeof navigator.deviceMemory === 'number' && navigator.deviceMemory <= 4;
+const autoLiteFx = !prefersReducedMotion && (isSmallViewport || hasLowCpu || hasLowMemory);
+const savedQuality = window.localStorage.getItem('fx-quality');
+const validQuality = savedQuality === 'high' || savedQuality === 'balanced' || savedQuality === 'lite';
+const qualityMode = validQuality ? savedQuality : autoLiteFx ? 'lite' : 'balanced';
+const useLiteFx = prefersReducedMotion || qualityMode === 'lite';
+const useHighFx = !prefersReducedMotion && qualityMode === 'high';
+const useBalancedFx = !prefersReducedMotion && qualityMode === 'balanced';
+
+if (useLiteFx) {
+  document.body.classList.add('fx-lite');
+}
+
+if (useBalancedFx) {
+  document.body.classList.add('fx-balanced');
+}
+
+if (fxQualitySelect) {
+  fxQualitySelect.value = qualityMode;
+  fxQualitySelect.addEventListener('change', () => {
+    window.localStorage.setItem('fx-quality', fxQualitySelect.value);
+    window.location.reload();
+  });
+}
+
+if (fxModeHint) {
+  const modeHintMap = {
+    high: 'High visuals enabled',
+    balanced: 'Balanced mode',
+    lite: 'Lite mode for speed',
+  };
+
+  fxModeHint.textContent = modeHintMap[qualityMode] || 'Balanced mode';
+}
 
 if (swapNameEl) {
   if (prefersReducedMotion) {
@@ -133,7 +171,7 @@ if (swapNameEl) {
   }
 }
 
-if (!prefersReducedMotion && interactiveMagnetic.length) {
+if (useHighFx && interactiveMagnetic.length) {
   interactiveMagnetic.forEach((element) => {
     element.classList.add('magnetic');
 
@@ -156,7 +194,7 @@ if (!prefersReducedMotion && interactiveMagnetic.length) {
   });
 }
 
-if (!prefersReducedMotion && tiltCards.length) {
+if (useHighFx && tiltCards.length) {
   tiltCards.forEach((card) => {
     const resetTilt = () => {
       card.style.transition = 'transform 320ms cubic-bezier(0.22, 1, 0.36, 1)';
@@ -179,7 +217,7 @@ if (!prefersReducedMotion && tiltCards.length) {
   });
 }
 
-if (!prefersReducedMotion) {
+if (useHighFx) {
   const core = document.createElement('span');
   const glow = document.createElement('span');
   core.className = 'cursor-core';
@@ -221,7 +259,7 @@ if (!prefersReducedMotion) {
 }
 
 if (starsLayer) {
-  const starCount = 170;
+  const starCount = useLiteFx ? 72 : useBalancedFx ? 120 : 170;
 
   for (let index = 0; index < starCount; index += 1) {
     const star = document.createElement('span');
@@ -252,7 +290,7 @@ if (starsLayer) {
     });
   }
 
-  const superstarCount = 12;
+  const superstarCount = useLiteFx ? 4 : useBalancedFx ? 8 : 12;
   for (let index = 0; index < superstarCount; index += 1) {
     const star = document.createElement('span');
     star.className = 'star';
@@ -283,7 +321,7 @@ if (starsLayer) {
   }
 }
 
-if (!prefersReducedMotion && starsForRepel.length) {
+if (useHighFx && starsForRepel.length) {
   const repelRadius = 170;
   const maxShift = 28;
 
@@ -344,7 +382,13 @@ if (!prefersReducedMotion && starsForRepel.length) {
 }
 
 if (meteorsLayer) {
+  const maxActiveMeteors = useLiteFx ? 6 : useBalancedFx ? 10 : 18;
+
   const spawnMeteor = () => {
+    if (meteorsLayer.childElementCount >= maxActiveMeteors) {
+      return;
+    }
+
     const meteor = document.createElement('span');
     meteor.className = 'meteor';
 
@@ -381,17 +425,23 @@ if (meteorsLayer) {
   };
 
   const queueMeteor = () => {
-    const burstCount = 2 + Math.floor(Math.random() * 3);
+    const burstCount = useLiteFx ? 1 : useBalancedFx ? 2 : 2 + Math.floor(Math.random() * 3);
     for (let index = 0; index < burstCount; index += 1) {
-      window.setTimeout(spawnMeteor, index * (52 + Math.random() * 88));
+      const burstGap = useLiteFx ? 120 : useBalancedFx ? 100 + Math.random() * 120 : 52 + Math.random() * 88;
+      window.setTimeout(spawnMeteor, index * burstGap);
     }
 
-    const nextDelay = 240 + Math.random() * 560;
+    const nextDelay = useLiteFx
+      ? 1300 + Math.random() * 1900
+      : useBalancedFx
+      ? 760 + Math.random() * 1040
+      : 240 + Math.random() * 560;
     window.setTimeout(queueMeteor, nextDelay);
   };
 
   // Seed a few meteors immediately so the shower is visible as soon as page loads.
-  for (let index = 0; index < 3; index += 1) {
+  const seedCount = useLiteFx ? 1 : 3;
+  for (let index = 0; index < seedCount; index += 1) {
     window.setTimeout(spawnMeteor, index * 120);
   }
 
@@ -399,7 +449,7 @@ if (meteorsLayer) {
 }
 
 const createClickBurst = (x, y) => {
-  const particles = 22;
+  const particles = useLiteFx ? 10 : useBalancedFx ? 16 : 22;
 
   for (let index = 0; index < particles; index += 1) {
     const particle = document.createElement('span');
@@ -424,7 +474,7 @@ const createClickBurst = (x, y) => {
   }
 };
 
-if (!prefersReducedMotion) {
+if (!prefersReducedMotion && !useLiteFx) {
   document.addEventListener('click', (event) => {
     createClickBurst(event.clientX, event.clientY);
   });
