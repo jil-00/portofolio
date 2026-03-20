@@ -1311,19 +1311,11 @@ body.fx-lite .performance-panel {
 }
 
 body.fx-lite .bg-nebula,
-body.fx-lite .bg-meteors {
-  display: none;
-}
-
-body.fx-lite .bg-stars .star {
-  animation: none;
-  box-shadow: none;
-}
-
+body.fx-lite .bg-meteors,
+body.fx-lite .bg-stars,
 body.fx-lite .bg-moon,
 body.fx-lite .bg-asteroid {
-  animation: none;
-  filter: none;
+  display: none;
 }
 
 body.fx-lite .section h2,
