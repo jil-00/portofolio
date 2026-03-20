@@ -4,6 +4,16 @@ const navAnchors = navLinks ? navLinks.querySelectorAll('a[href^="#"]') : [];
 const interactiveMagnetic = document.querySelectorAll(
   '.btn, .project-links a, .hero-socials a, .contact-link-card, .back-to-top'
 );
+const VISITOR_LOG_KEY = 'portfolio-visitor-logs-v1';
+const BLOCKED_VISITOR_KEY = 'portfolio-blocked-visitors-v1';
+const ADMIN_VISITOR_ID_KEY = 'portfolio-admin-visitor-id-v1';
+const ADMIN_SECRET_SEQUENCE = 'adminlog';
+const ADMIN_HASH_SALT = 'p0rtf0lio.v1::';
+const ADMIN_PASSCODE_HASH = '9652e5deda5ee3b41c4ae19b10b2a04e70d86246cb464eb76980ba3467ffe79d';
+const ADMIN_AUTH_STATE_KEY = 'portfolio-admin-auth-state-v1';
+const ADMIN_MAX_ATTEMPTS = 3;
+const ADMIN_LOCKOUT_MS = 2 * 60 * 1000;
+const ADMIN_BYPASS_HASH = '#admin-bypass';
 const tiltCards = document.querySelectorAll('.project-card, .hero-card');
 const pointerState = {
   x: window.innerWidth / 2,
@@ -11,6 +21,72 @@ const pointerState = {
   active: false,
 };
 const starsForRepel = [];
+
+const hashVisitorKey = (value) => {
+  let hash = 2166136261;
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= value.charCodeAt(index);
+    hash += (hash << 1) + (hash << 4) + (hash << 7) + (hash << 8) + (hash << 24);
+  }
+
+  return `v-${(hash >>> 0).toString(16).padStart(8, '0')}`;
+};
+
+const getCurrentVisitorId = () => {
+  const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'unknown';
+  const platform = navigator.userAgentData?.platform || navigator.platform || 'unknown';
+  const rawKey = [navigator.userAgent || 'unknown', navigator.language || 'unknown', platform, timeZone]
+    .join('|')
+    .toLowerCase();
+  return hashVisitorKey(rawKey);
+};
+
+const readBlockedVisitorIds = () => {
+  try {
+    const raw = window.localStorage.getItem(BLOCKED_VISITOR_KEY);
+    if (!raw) {
+      return [];
+    }
+
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed.filter((item) => typeof item === 'string' && item) : [];
+  } catch (error) {
+    return [];
+  }
+};
+
+const writeBlockedVisitorIds = (blockedIds) => {
+  window.localStorage.setItem(BLOCKED_VISITOR_KEY, JSON.stringify(blockedIds));
+};
+
+const readAdminVisitorId = () => {
+  const saved = window.localStorage.getItem(ADMIN_VISITOR_ID_KEY);
+  return saved || '';
+};
+
+const writeAdminVisitorId = (visitorId) => {
+  window.localStorage.setItem(ADMIN_VISITOR_ID_KEY, visitorId);
+};
+
+const renderBlockedAccessScreen = () => {
+  document.body.className = '';
+  document.body.innerHTML = `
+    <main style="min-height:100vh;display:grid;place-items:center;background:#050913;color:#e9f2ff;font-family:Inter,system-ui,sans-serif;padding:2rem;text-align:center;">
+      <div>
+        <h1 style="margin:0 0 .6rem;font-size:1.8rem;">Access Restricted</h1>
+        <p style="margin:0;color:#b8c8e4;">This visitor has been blocked by the site admin.</p>
+      </div>
+    </main>
+  `;
+};
+
+const currentVisitorId = getCurrentVisitorId();
+const blockedVisitors = readBlockedVisitorIds();
+const allowBypass = window.location.hash === ADMIN_BYPASS_HASH;
+if (blockedVisitors.includes(currentVisitorId) && !allowBypass) {
+  renderBlockedAccessScreen();
+  throw new Error('Blocked visitor.');
+}
 
 if (menuButton && navLinks) {
   menuButton.addEventListener('click', () => {
@@ -68,6 +144,365 @@ if (yearEl) {
   yearEl.textContent = new Date().getFullYear();
 }
 
+const readVisitorLogs = () => {
+  try {
+    const rawLogs = window.localStorage.getItem(VISITOR_LOG_KEY);
+    if (!rawLogs) {
+      return [];
+    }
+
+    const parsed = JSON.parse(rawLogs);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (error) {
+    return [];
+  }
+};
+
+const writeVisitorLogs = (logs) => {
+  window.localStorage.setItem(VISITOR_LOG_KEY, JSON.stringify(logs));
+};
+
+const bytesToHex = (bytes) =>
+  Array.from(bytes)
+    .map((value) => value.toString(16).padStart(2, '0'))
+    .join('');
+
+const hashStringSha256 = async (text) => {
+  if (!window.crypto || !window.crypto.subtle) {
+    return '';
+  }
+
+  const textBytes = new TextEncoder().encode(text);
+  const digest = await window.crypto.subtle.digest('SHA-256', textBytes);
+  return bytesToHex(new Uint8Array(digest));
+};
+
+const readAdminAuthState = () => {
+  try {
+    const raw = window.sessionStorage.getItem(ADMIN_AUTH_STATE_KEY);
+    if (!raw) {
+      return { failedAttempts: 0, lockUntil: 0 };
+    }
+
+    const parsed = JSON.parse(raw);
+    const failedAttempts = Number(parsed.failedAttempts) || 0;
+    const lockUntil = Number(parsed.lockUntil) || 0;
+    return { failedAttempts, lockUntil };
+  } catch (error) {
+    return { failedAttempts: 0, lockUntil: 0 };
+  }
+};
+
+const writeAdminAuthState = (state) => {
+  window.sessionStorage.setItem(ADMIN_AUTH_STATE_KEY, JSON.stringify(state));
+};
+
+const getLockRemainingMs = () => {
+  const { lockUntil } = readAdminAuthState();
+  return Math.max(0, lockUntil - Date.now());
+};
+
+const recordFailedAttempt = () => {
+  const authState = readAdminAuthState();
+  const failedAttempts = authState.failedAttempts + 1;
+
+  if (failedAttempts >= ADMIN_MAX_ATTEMPTS) {
+    writeAdminAuthState({ failedAttempts: 0, lockUntil: Date.now() + ADMIN_LOCKOUT_MS });
+    return;
+  }
+
+  writeAdminAuthState({ failedAttempts, lockUntil: 0 });
+};
+
+const clearFailedAttempts = () => {
+  writeAdminAuthState({ failedAttempts: 0, lockUntil: 0 });
+};
+
+const verifyAdminPasscode = async (enteredPasscode) => {
+  const hashed = await hashStringSha256(`${ADMIN_HASH_SALT}${enteredPasscode}`);
+  return hashed === ADMIN_PASSCODE_HASH;
+};
+
+const renderVisitorLogs = (tableBody) => {
+  if (!tableBody) {
+    return;
+  }
+
+  const logs = readVisitorLogs();
+  const adminVisitorId = readAdminVisitorId() || currentVisitorId;
+  const blockedSet = new Set(readBlockedVisitorIds());
+  tableBody.innerHTML = '';
+
+  if (!logs.length) {
+    const emptyRow = document.createElement('tr');
+    const emptyCell = document.createElement('td');
+    emptyCell.colSpan = 8;
+    emptyCell.textContent = 'No visitor logs found yet.';
+    emptyRow.appendChild(emptyCell);
+    tableBody.appendChild(emptyRow);
+    return;
+  }
+
+  logs
+    .slice()
+    .reverse()
+    .forEach((log) => {
+      const row = document.createElement('tr');
+      const cells = [
+        log.timestamp || '-',
+        log.path || '-',
+        log.language || '-',
+        log.platform || '-',
+        log.timeZone || '-',
+        log.referrer || 'Direct',
+      ];
+
+      cells.forEach((cellValue) => {
+        const cell = document.createElement('td');
+        cell.textContent = String(cellValue);
+        row.appendChild(cell);
+      });
+
+      const actionCell = document.createElement('td');
+      const visitorId = log.visitorId || '-';
+      const isBlocked = visitorId !== '-' && blockedSet.has(visitorId);
+      const isCurrentVisitor = visitorId !== '-' && visitorId === adminVisitorId;
+
+      const roleCell = document.createElement('td');
+      roleCell.textContent = isCurrentVisitor ? 'Admin' : 'Visitor';
+      row.appendChild(roleCell);
+
+      const actionButton = document.createElement('button');
+      actionButton.type = 'button';
+      actionButton.className = 'btn btn-soft';
+      actionButton.dataset.adminToggleBlock = visitorId;
+      actionButton.textContent = isCurrentVisitor ? 'You' : isBlocked ? 'Unblock' : 'Block';
+      actionButton.disabled = visitorId === '-' || isCurrentVisitor;
+      actionCell.appendChild(actionButton);
+      row.appendChild(actionCell);
+
+      tableBody.appendChild(row);
+    });
+};
+
+const ensureAdminModal = () => {
+  let modal = document.getElementById('adminLogModal');
+  if (modal) {
+    return {
+      modal,
+      status: modal.querySelector('[data-admin-status]'),
+      tableBody: modal.querySelector('[data-admin-log-body]'),
+    };
+  }
+
+  modal = document.createElement('div');
+  modal.id = 'adminLogModal';
+  modal.className = 'admin-log-modal';
+  modal.hidden = true;
+  modal.innerHTML = `
+    <div class="admin-log-modal__backdrop" data-admin-close></div>
+    <section class="admin-log-modal__panel" role="dialog" aria-modal="true" aria-label="Admin visitor logs">
+      <div class="admin-log-modal__head">
+        <h2>Visitor Logs</h2>
+        <button type="button" class="btn btn-outline" data-admin-close>Close</button>
+      </div>
+      <p class="admin-log-modal__status" data-admin-status>Admin access enabled.</p>
+      <div class="admin-log-modal__actions">
+        <button type="button" class="btn btn-soft" data-admin-clear>Clear Logs</button>
+      </div>
+      <div class="admin-log-modal__table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Time</th>
+              <th>Page</th>
+              <th>Language</th>
+              <th>Platform</th>
+              <th>Time Zone</th>
+              <th>Referrer</th>
+              <th>Role</th>
+              <th>Action</th>
+            </tr>
+          </thead>
+          <tbody data-admin-log-body></tbody>
+        </table>
+      </div>
+    </section>
+  `;
+
+  document.body.appendChild(modal);
+
+  modal.querySelectorAll('[data-admin-close]').forEach((closer) => {
+    closer.addEventListener('click', () => {
+      modal.hidden = true;
+    });
+  });
+
+  const clearButton = modal.querySelector('[data-admin-clear]');
+  const statusNode = modal.querySelector('[data-admin-status]');
+  const bodyNode = modal.querySelector('[data-admin-log-body]');
+
+  if (clearButton && statusNode && bodyNode) {
+    clearButton.addEventListener('click', () => {
+      const shouldClear = window.confirm('Clear all visitor logs? This cannot be undone.');
+      if (!shouldClear) {
+        return;
+      }
+
+      writeVisitorLogs([]);
+      renderVisitorLogs(bodyNode);
+      statusNode.textContent = 'Logs cleared.';
+    });
+
+    bodyNode.addEventListener('click', (event) => {
+      const toggleButton = event.target.closest('button[data-admin-toggle-block]');
+      if (!toggleButton) {
+        return;
+      }
+
+      const visitorId = toggleButton.dataset.adminToggleBlock;
+      if (!visitorId || visitorId === '-') {
+        return;
+      }
+
+      if (visitorId === currentVisitorId) {
+        statusNode.textContent = 'Your current visitor cannot be blocked.';
+        return;
+      }
+
+      const blockedIds = readBlockedVisitorIds();
+      const isBlocked = blockedIds.includes(visitorId);
+
+      if (isBlocked) {
+        writeBlockedVisitorIds(blockedIds.filter((id) => id !== visitorId));
+        statusNode.textContent = `Visitor ${visitorId} unblocked.`;
+      } else {
+        writeBlockedVisitorIds([...new Set([...blockedIds, visitorId])]);
+        statusNode.textContent = `Visitor ${visitorId} blocked.`;
+      }
+
+      renderVisitorLogs(bodyNode);
+    });
+  }
+
+  return {
+    modal,
+    status: statusNode,
+    tableBody: bodyNode,
+  };
+};
+
+const trackVisitor = () => {
+  const sessionFlag = 'portfolio-visit-tracked';
+  if (window.sessionStorage.getItem(sessionFlag) === '1') {
+    return;
+  }
+
+  const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'Unknown';
+  const platform = navigator.userAgentData?.platform || navigator.platform || 'Unknown';
+  const entry = {
+    visitorId: currentVisitorId,
+    timestamp: new Date().toLocaleString(),
+    path: window.location.pathname || '/',
+    referrer: document.referrer || 'Direct',
+    language: navigator.language || 'Unknown',
+    platform,
+    timeZone,
+    screen: `${window.screen.width}x${window.screen.height}`,
+    userAgent: navigator.userAgent,
+  };
+
+  const logs = readVisitorLogs();
+  logs.push(entry);
+  const trimmedLogs = logs.slice(-200);
+  writeVisitorLogs(trimmedLogs);
+  window.sessionStorage.setItem(sessionFlag, '1');
+};
+
+trackVisitor();
+
+let adminTypedBuffer = '';
+window.addEventListener('keydown', async (event) => {
+  const targetTag = event.target && event.target.tagName ? event.target.tagName.toLowerCase() : '';
+  if (targetTag === 'input' || targetTag === 'textarea') {
+    return;
+  }
+
+  if (event.key === 'Escape') {
+    const modal = document.getElementById('adminLogModal');
+    if (modal && !modal.hidden) {
+      modal.hidden = true;
+    }
+    return;
+  }
+
+  if (!/^[a-z]$/i.test(event.key)) {
+    return;
+  }
+
+  adminTypedBuffer += event.key.toLowerCase();
+  adminTypedBuffer = adminTypedBuffer.slice(-ADMIN_SECRET_SEQUENCE.length);
+
+  if (adminTypedBuffer !== ADMIN_SECRET_SEQUENCE) {
+    return;
+  }
+
+  adminTypedBuffer = '';
+  const lockRemainingMs = getLockRemainingMs();
+  if (lockRemainingMs > 0) {
+    const seconds = Math.ceil(lockRemainingMs / 1000);
+    window.alert(`Admin access is temporarily locked. Try again in ${seconds}s.`);
+    return;
+  }
+
+  const enteredPasscode = window.prompt('Enter admin passcode:');
+  if (!enteredPasscode) {
+    return;
+  }
+
+  const isValidPasscode = await verifyAdminPasscode(enteredPasscode);
+  if (!isValidPasscode) {
+    recordFailedAttempt();
+    return;
+  }
+
+  clearFailedAttempts();
+  writeAdminVisitorId(currentVisitorId);
+
+  const { modal, status, tableBody } = ensureAdminModal();
+  if (status) {
+    status.textContent = 'Admin access enabled.';
+  }
+  if (tableBody) {
+    renderVisitorLogs(tableBody);
+  }
+  if (modal) {
+    modal.hidden = false;
+  }
+});
+
+window.addEventListener('click', (event) => {
+  const modal = document.getElementById('adminLogModal');
+  if (!modal || modal.hidden) {
+    return;
+  }
+
+  const panel = modal.querySelector('.admin-log-modal__panel');
+  if (panel && !panel.contains(event.target)) {
+    modal.hidden = true;
+  }
+});
+
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'hidden') {
+    adminTypedBuffer = '';
+  }
+});
+
+window.addEventListener('blur', () => {
+  adminTypedBuffer = '';
+});
+
 const backToTopButton = document.getElementById('backToTop');
 const starsLayer = document.querySelector('.bg-stars');
 const meteorsLayer = document.querySelector('.bg-meteors');
@@ -97,7 +532,7 @@ const hasLowMemory = typeof navigator.deviceMemory === 'number' && navigator.dev
 const autoLiteFx = !prefersReducedMotion && (isSmallViewport || hasLowCpu || hasLowMemory);
 const savedQuality = window.localStorage.getItem('fx-quality');
 const validQuality = savedQuality === 'high' || savedQuality === 'balanced' || savedQuality === 'lite';
-const qualityMode = validQuality ? savedQuality : autoLiteFx ? 'lite' : 'balanced';
+const qualityMode = validQuality ? savedQuality : autoLiteFx ? 'lite' : 'lite';
 const useLiteFx = prefersReducedMotion || qualityMode === 'lite';
 const useHighFx = !prefersReducedMotion && qualityMode === 'high';
 const useBalancedFx = !prefersReducedMotion && qualityMode === 'balanced';
@@ -217,49 +652,8 @@ if (useHighFx && tiltCards.length) {
   });
 }
 
-if (useHighFx) {
-  const core = document.createElement('span');
-  const glow = document.createElement('span');
-  core.className = 'cursor-core';
-  glow.className = 'cursor-glow';
-  document.body.append(core, glow);
-
-  const trail = { x: pointerState.x, y: pointerState.y };
-
-  const renderCursor = () => {
-    trail.x += (pointerState.x - trail.x) * 0.16;
-    trail.y += (pointerState.y - trail.y) * 0.16;
-
-    core.style.transform = `translate3d(${pointerState.x}px, ${pointerState.y}px, 0) translate(-50%, -50%)`;
-    glow.style.transform = `translate3d(${trail.x}px, ${trail.y}px, 0) translate(-50%, -50%)`;
-
-    window.requestAnimationFrame(renderCursor);
-  };
-
-  document.addEventListener(
-    'pointermove',
-    (event) => {
-      pointerState.x = event.clientX;
-      pointerState.y = event.clientY;
-      pointerState.active = true;
-      document.body.classList.add('pointer-ready');
-    },
-    { passive: true }
-  );
-
-  document.addEventListener('pointerdown', () => {
-    core.style.transform += ' scale(0.9)';
-  });
-
-  document.addEventListener('pointerup', () => {
-    core.style.transform = `translate3d(${pointerState.x}px, ${pointerState.y}px, 0) translate(-50%, -50%)`;
-  });
-
-  window.requestAnimationFrame(renderCursor);
-}
-
 if (starsLayer) {
-  const starCount = useLiteFx ? 72 : useBalancedFx ? 120 : 170;
+  const starCount = useLiteFx ? 36 : useBalancedFx ? 64 : 110;
 
   for (let index = 0; index < starCount; index += 1) {
     const star = document.createElement('span');
@@ -290,7 +684,7 @@ if (starsLayer) {
     });
   }
 
-  const superstarCount = useLiteFx ? 4 : useBalancedFx ? 8 : 12;
+  const superstarCount = useLiteFx ? 2 : useBalancedFx ? 4 : 7;
   for (let index = 0; index < superstarCount; index += 1) {
     const star = document.createElement('span');
     star.className = 'star';
@@ -381,8 +775,8 @@ if (useHighFx && starsForRepel.length) {
   window.requestAnimationFrame(animateStarRepel);
 }
 
-if (meteorsLayer) {
-  const maxActiveMeteors = useLiteFx ? 6 : useBalancedFx ? 10 : 18;
+if (meteorsLayer && useHighFx) {
+  const maxActiveMeteors = 10;
 
   const spawnMeteor = () => {
     if (meteorsLayer.childElementCount >= maxActiveMeteors) {
@@ -425,22 +819,18 @@ if (meteorsLayer) {
   };
 
   const queueMeteor = () => {
-    const burstCount = useLiteFx ? 1 : useBalancedFx ? 2 : 2 + Math.floor(Math.random() * 3);
+    const burstCount = 1 + Math.floor(Math.random() * 2);
     for (let index = 0; index < burstCount; index += 1) {
-      const burstGap = useLiteFx ? 120 : useBalancedFx ? 100 + Math.random() * 120 : 52 + Math.random() * 88;
+      const burstGap = 120 + Math.random() * 120;
       window.setTimeout(spawnMeteor, index * burstGap);
     }
 
-    const nextDelay = useLiteFx
-      ? 1300 + Math.random() * 1900
-      : useBalancedFx
-      ? 760 + Math.random() * 1040
-      : 240 + Math.random() * 560;
+    const nextDelay = 800 + Math.random() * 1200;
     window.setTimeout(queueMeteor, nextDelay);
   };
 
   // Seed a few meteors immediately so the shower is visible as soon as page loads.
-  const seedCount = useLiteFx ? 1 : 3;
+  const seedCount = 1;
   for (let index = 0; index < seedCount; index += 1) {
     window.setTimeout(spawnMeteor, index * 120);
   }
@@ -474,7 +864,7 @@ const createClickBurst = (x, y) => {
   }
 };
 
-if (!prefersReducedMotion && !useLiteFx) {
+if (useHighFx) {
   document.addEventListener('click', (event) => {
     createClickBurst(event.clientX, event.clientY);
   });
